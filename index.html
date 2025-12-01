@@ -1,14 +1,54 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sequencing Risk Calculator</title>
-    <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sequencing Risk Calculator</title>
+
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="style.css" />
+  
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
+
 <body>
-    <h1>Sequencing Risk Calculator</h1>
-    <div id="app"></div>
-    <script src="script.js"></script>
+  <h1>Sequencing Risk Calculator</h1>
+
+  <div class="calculator-container">
+    <form id="calc-form">
+
+      <label for="startingBalance">Retirement Balance ($):</label>
+      <input type="number" id="startingBalance" required />
+
+      <label for="withdrawalAmount">Annual Withdrawal ($):</label>
+      <input type="number" id="withdrawalAmount" required />
+
+      <label for="expectedReturn">Expected Return (% p.a.):</label>
+      <input type="number" step="0.1" id="expectedReturn" required />
+
+      <label for="volatility">Volatility (% p.a.):</label>
+      <input type="number" step="0.1" id="volatility" required />
+
+      <label for="years">Years in Retirement:</label>
+      <input type="number" id="years" required />
+
+      <label for="scenarios">Number of Scenarios:</label>
+      <input type="number" id="scenarios" value="1000" required />
+
+      <button type="submit">Run Simulation</button>
+    </form>
+
+    <div id="results">
+      <h2>Results</h2>
+      <p id="probability"></p>
+    </div>
+
+    <div class="chart-container">
+      <canvas id="distributionChart"></canvas>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
 </body>
 </html>
