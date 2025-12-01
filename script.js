@@ -3,18 +3,18 @@ document.getElementById("calc-form").addEventListener("submit", function (e) {
     runSimulation();
 });
 
-// Normal distribution random number
+// Generate normal distribution random number
 function randNormal(mean = 0, stddev = 1) {
     let u = 0, v = 0;
     while (u === 0) u = Math.random();
     while (v === 0) v = Math.random();
-    const num = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-    return num * stddev + mean;
+    return mean + stddev * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
 
 let distributionChart = null;
 
 function runSimulation() {
+
     const start = parseFloat(document.getElementById('startingBalance').value);
     const wd = parseFloat(document.getElementById('withdrawalAmount').value);
     const exp = parseFloat(document.getElementById('expectedReturn').value) / 100;
@@ -25,6 +25,7 @@ function runSimulation() {
     let ruins = 0;
     let terminals = [];
 
+    // Run Monte Carlo
     for (let s = 0; s < sims; s++) {
         let balance = start;
 
@@ -61,7 +62,7 @@ function runSimulation() {
         <b>90th percentile Terminal Balance:</b> $${p90.toLocaleString()}
     `;
 
-    // Histogram
+    // Build histogram
     const bins = 20;
     const max = Math.max(...terminals);
     const min = 0;
@@ -69,9 +70,9 @@ function runSimulation() {
 
     const binCounts = Array(bins).fill(0);
 
-    terminals.forEach(value => {
-        let idx = Math.floor(value / binWidth);
-        if (idx >= bins) { idx = bins - 1; }
+    terminals.forEach(val => {
+        let idx = Math.floor(val / binWidth);
+        if (idx >= bins) idx = bins - 1;
         binCounts[idx]++;
     });
 
