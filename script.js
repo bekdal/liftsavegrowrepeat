@@ -1,3 +1,9 @@
+document.getElementById("calc-form").addEventListener("submit", function (e) {
+    e.preventDefault();
+    runSimulation();
+});
+
+
 // Create UI dynamically inside #app
 const app = document.getElementById("app");
 
