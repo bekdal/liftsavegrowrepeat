@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Sequencing Risk Calculator</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+  <style>
+    :root{font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;}
+    body{max-width:1100px;margin:24px auto;padding:16px;color:#111}
+    h1{font-size:24px;margin:0 0 8px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+    .card{background:#fff;border:1px solid #e6e6e6;border-radius:10px;padding:12px;box-shadow:0 1px 4px rgba(0,0,0,0.03)}
+    label{display:block;font-size:13px;margin-bottom:6px}
+    input[type=number],select{width:100%;padding:8px;border-radius:6px;border:1px solid #cfcfcf}
+    .row{display:flex;gap:8px}
+    button{background:#0b74de;color:white;border:none;padding:10px 14px;border-radius:8px;cursor:pointer}
+    button.secondary{background:#6c757d}
+    .muted{color:#666;font-size:13px}
+    .results{margin-top:12px}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:6px 8px;text-align:left;border-bottom:1px solid #f0f0f0}
+    .small{font-size:13px}
+    footer{margin-top:18px;color:#666;font-size:13px}
+  </style>
+</head>
+<body>
+  <h1>Sequencing Risk Calculator — Retirement withdrawal Monte Carlo</h1>
+  <p class="muted">Enter your expected inputs below. The calculator runs Monte Carlo scenarios (annual steps) and estimates the chance you will run out of money before the end of the holding period.</p>
+
+  <div class="grid">
+    <div class="card">
+      <label>Starting portfolio balance (at retirement)</label>
+      <input id="startBalance" type="number" value="1000000" step="1000" />
+
+      <label>Annual withdrawal amount (nominal)</label>
+      <input id="withdrawal" type="number" value="50000" step="100" />
+
+      <label>Holding period (years)</label>
+      <input id="years" type="number" value="30" min="1" />
+
+      <label>Expected annual return (mean, %)</label>
+      <input id="meanReturn" type="number" value="6" step="0.1" />
+
+      <label>Annual volatility (std dev, %)</label>
+      <input id="volatility" type="number" value="12" step="0.1" />
+
+      <label>Inflation (annual %, used to escalate withdrawals)</label>
+      <input id="inflation" type="number" value="2" step="0.1" />
+
+      <label>Withdrawals escalated for inflation?</label>
+      <select id="escalate">
+        <option value="yes" selected>Yes — withdrawal increases by inflation each year (real-preserving)</option>
+        <option value="no">No — fixed nominal withdrawal each year</option>
+      </select>
+
+      <label>Withdraw at</label>
+      <select id="withdrawTiming">
+        <option value="end">End of year (after returns)</option>
+        <option value="start">Start of year (before returns)</option>
+      </select>
+
+      <label>Number of Monte Carlo scenarios</label>
+      <input id="nScenarios" type="number" value="5000" />
+
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button id="runBtn">Run simulations</button>
+        <button id="downloadBtn" class="secondary" disabled>Download CSV</button>
+      </div>
+
+      <div class="results" id="summary"></div>
+    </div>
+
+    <div class="card">
+      <canvas id="survivalChart" height="220"></canvas>
+      <div style="height:8px"></div>
+      <canvas id="histChart" height="220"></canvas>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:12px">
+    <h3 style="margin:0 0 8px">Statistics & table</h3>
+    <div id="statsArea"></div>
+    <div id="tableArea"></div>
+  </div>
+
+  <footer>
+    <strong>Assumptions:</strong> Annual returns are drawn from a normal distribution with the specified mean and volatility. Returns are applied yearly (discrete). Withdrawals are fixed nominal amounts unless "escalate" chosen. Taxes, fees, sequence dependence between volatility and returns, and correlation with other cash flows are <em>not</em> modelled. Use results as illustrative only.
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script>
+    // Utilities
+    function randn_bm() {
+      // Box-Muller transform
+      let u = 0, v = 0;
+      while(u === 0) u = Math.random();
+      while(v === 0) v = Math.random();
+      return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+    }
+
+    function sampleAnnualReturn(meanPct, volPct) {
+      const mean = meanPct/100;
+      const vol = volPct/100;
+      // approximate lognormal handling by sampling normal then applying to 1+ret
+      // we keep it simple: sample normal and treat as arithmetic return
+      return mean + vol * randn_bm();
+    }
+
+    function runOneScenario(startBalance, years, withdrawal, meanReturn, volatility, inflation, escalate, withdrawTiming) {
+      let balance = startBalance;
+      let w = withdrawal;
+      for (let y=1; y<=years; y++) {
+        if (withdrawTiming === 'start') {
+          balance -= w;
+          if (balance <= 0) return {ruined:true, year:y, terminal:0};
+        }
+        const r = sampleAnnualReturn(meanReturn, volatility);
+        balance = balance * (1 + r);
+        if (withdrawTiming === 'end') {
+          balance -= w;
+          if (balance <= 0) return {ruined:true, year:y, terminal:0};
+        }
+        if (escalate === 'yes') {
+          w = w * (1 + inflation/100);
+        }
+      }
+      return {ruined:false, year:null, terminal:balance};
+    }
+
+    function runSimulations(n, startBalance, years, withdrawal, meanReturn, volatility, inflation, escalate, withdrawTiming, onProgress) {
+      const results = [];
+      for (let i=0;i<n;i++){
+        const res = runOneScenario(startBalance, years, withdrawal, meanReturn, volatility, inflation, escalate, withdrawTiming);
+        results.push(res);
+        if (i%200===0 && onProgress) onProgress(i);
+      }
+      if (onProgress) onProgress(n);
+      return results;
+    }
+
+    // UI wiring
+    const runBtn = document.getElementById('runBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const summary = document.getElementById('summary');
+    const statsArea = document.getElementById('statsArea');
+    const tableArea = document.getElementById('tableArea');
+
+    let survivalChart=null, histChart=null, latestResults=null;
+
+    function summarise(results, years) {
+      const n = results.length;
+      const ruined = results.filter(r=>r.ruined).length;
+      const ruinRate = ruined/n;
+      const terminals = results.filter(r=>!r.ruined).map(r=>r.terminal);
+      const meanTerminal = terminals.reduce((a,b)=>a+b,0)/(terminals.length||1);
+      const sorted = terminals.slice().sort((a,b)=>a-b);
+      function pct(p){
+        if (sorted.length===0) return 0;
+        const idx = Math.floor(p/100 * (sorted.length-1));
+        return sorted[Math.max(0, Math.min(sorted.length-1, idx))];
+      }
+      const p10 = pct(10), p25=pct(25), p50=pct(50), p75=pct(75), p90=pct(90);
+
+      // survival by year
+      const surviveCounts = Array.from({length:years+1},(_,i)=>0);
+      results.forEach(r=>{
+        if (r.ruined) {
+          // ruined.year is the year of ruin, so survived until year-1
+          const survivedYears = Math.max(0, r.year-1);
+          for (let k=0;k<=survivedYears;k++) surviveCounts[k]++;
+        } else {
+          for (let k=0;k<=years;k++) surviveCounts[k]++;
+        }
+      });
+      const survivalRates = surviveCounts.map(c=>c/n);
+
+      return {n, ruined, ruinRate, meanTerminal, p10,p25,p50,p75,p90, survivalRates, terminals};
+    }
+
+    function renderCharts(stats) {
+      const years = stats.survivalRates.length-1;
+      const labels = Array.from({length:years+1},(_,i)=>i+" yrs");
+
+      if (survivalChart) survivalChart.destroy();
+      const ctx1 = document.getElementById('survivalChart').getContext('2d');
+      survivalChart = new Chart(ctx1, {
+        type:'line',
+        data:{labels, datasets:[{label:'Probability portfolio still positive', data:stats.survivalRates, tension:0.2}]},
+        options:{scales:{y:{beginAtZero:true, max:1}}}
+      });
+
+      if (histChart) histChart.destroy();
+      const ctx2 = document.getElementById('histChart').getContext('2d');
+      // build histogram for terminal balances (cap at high quantile for display)
+      const data = stats.terminals.slice();
+      const max = Math.max(...data, 1);
+      const min = Math.min(...data);
+      // create 30 bins
+      const bins=30;
+      const width = (max-min)/bins || 1;
+      const counts = new Array(bins).fill(0);
+      data.forEach(v=>{
+        const i = Math.floor((v-min)/width);
+        if (i<0) counts[0]++; else if (i>=bins) counts[bins-1]++; else counts[i]++;
+      });
+      const binLabels = counts.map((_,i)=>((min + i*width).toFixed(0)));
+      histChart = new Chart(ctx2, {type:'bar', data:{labels:binLabels, datasets:[{label:'Terminal balance frequency', data:counts}]}, options:{scales:{y:{beginAtZero:true}}}});
+    }
+
+    function renderStatsBlock(statObj) {
+      statsArea.innerHTML = `
+        <p class="small">Scenarios: <strong>${statObj.n.toLocaleString()}</strong></p>
+        <p class="small">Ruin / ran out of money: <strong>${statObj.ruined.toLocaleString()}</strong> ( <strong>${(statObj.ruinRate*100).toFixed(2)}%</strong> )</p>
+        <table>
+          <tr><th>Measure</th><th>Value (AUD)</th></tr>
+          <tr><td>Mean terminal (survivors)</td><td>${statObj.meanTerminal.toFixed(0)}</td></tr>
+          <tr><td>10th percentile (terminal)</td><td>${statObj.p10.toFixed(0)}</td></tr>
+          <tr><td>25th percentile (terminal)</td><td>${statObj.p25.toFixed(0)}</td></tr>
+          <tr><td>Median (50th percentile)</td><td>${statObj.p50.toFixed(0)}</td></tr>
+          <tr><td>75th percentile (terminal)</td><td>${statObj.p75.toFixed(0)}</td></tr>
+          <tr><td>90th percentile (terminal)</td><td>${statObj.p90.toFixed(0)}</td></tr>
+        </table>
+      `;
+
+      // year-by-year table
+      const years = statObj.survivalRates.length-1;
+      let rows = `<table><tr><th>Year</th><th>Prob survive to end of year</th></tr>`;
+      statObj.survivalRates.forEach((r,i)=>{ rows += `<tr><td>${i}</td><td>${(r*100).toFixed(2)}%</td></tr>`; });
+      rows += `</table>`;
+      tableArea.innerHTML = rows;
+    }
+
+    function resultsToCSV(results) {
+      const header = ['scenario','ruined','year_of_ruin','terminal_balance'];
+      const rows = results.map((r,i)=>[i+1, r.ruined, r.year===null? '': r.year, r.terminal.toFixed(2)]);
+      const csv = [header.join(','), ...rows.map(r=>r.join(','))].join('\n');
+      return csv;
+    }
+
+    runBtn.addEventListener('click', ()=>{
+      runBtn.disabled = true; downloadBtn.disabled = true; summary.innerText = 'Running simulations...';
+      // read inputs
+      const startBalance = Number(document.getElementById('startBalance').value);
+      const withdrawal = Number(document.getElementById('withdrawal').value);
+      const years = Number(document.getElementById('years').value);
+      const meanReturn = Number(document.getElementById('meanReturn').value);
+      const volatility = Number(document.getElementById('volatility').value);
+      const inflation = Number(document.getElementById('inflation').value);
+      const escalate = document.getElementById('escalate').value;
+      const withdrawTiming = document.getElementById('withdrawTiming').value;
+      const n = Number(document.getElementById('nScenarios').value);
+
+      setTimeout(()=>{ // allow UI update
+        const results = runSimulations(n, startBalance, years, withdrawal, meanReturn, volatility, inflation, escalate, withdrawTiming, (i)=>{ summary.innerText = `Running simulations... ${i}/${n}`; });
+        latestResults = results;
+        const stats = summarise(results, years);
+        renderStatsBlock(stats);
+        renderCharts(stats);
+        summary.innerText = `Done — simulated ${n.toLocaleString()} scenarios.`;
+        runBtn.disabled = false; downloadBtn.disabled = false;
+      }, 20);
+    });
+
+    downloadBtn.addEventListener('click', ()=>{
+      if (!latestResults) return;
+      const csv = resultsToCSV(latestResults);
+      const blob = new Blob([csv], {type:'text/csv'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href=url; a.download='sequencing_simulations.csv'; a.click(); URL.revokeObjectURL(url);
+    });
+
+  </script>
+</body>
+</html>
