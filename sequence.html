@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sequencing Risk Calculator</title>
+    
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+    
+    <!-- Prop-types (Required by Recharts UMD) -->
+    <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+
+    <!-- Recharts (Charting Library) -->
+    <!-- Note: We use the unminified 'Recharts.js' because 'Recharts.min.js' is often missing from the NPM build, causing MIME type errors -->
+    <script src="https://cdn.jsdelivr.net/npm/recharts@2.12.7/umd/Recharts.js"></script>
+    
+    <!-- Babel (Compiles JSX in browser) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        body {
+            background-color: #f8fafc;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // Debug checks
+        console.log('React loaded:', typeof React !== 'undefined');
+        console.log('Recharts loaded:', typeof window.Recharts !== 'undefined');
+        
+        const { useState, useEffect } = React;
+        
+        // Robust Recharts loading
+        let RechartsLib = window.Recharts;
+        if (!RechartsLib) {
+            console.error('Recharts not found on window object. CDN load failed.');
+            // Fallback to prevent white screen crash
+            RechartsLib = {
+                LineChart: ({ children }) => <div className="p-4 bg-red-50 text-red-600 border border-red-200 rounded">Chart Library Failed to Load</div>,
+                Line: () => null,
+                XAxis: () => null,
+                YAxis: () => null,
+                CartesianGrid: () => null,
+                Tooltip: () => null,
+                ResponsiveContainer: ({ children, height }) => <div style={{ height }}>{children}</div>,
+                ReferenceLine: () => null,
+                Area: () => null,
+                ComposedChart: ({ children }) => <div className="p-4 bg-red-50 text-red-600 border border-red-200 rounded">Chart Library Failed to Load</div>
+            };
+        }
+        
+        const { 
+            LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, 
+            ResponsiveContainer, ReferenceLine, Area, ComposedChart 
+        } = RechartsLib;
+
+        // --- Icons ---
+        const CalculatorIcon = ({ className }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/></svg>
+        );
+        const RefreshCwIcon = ({ className }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+        );
+        const TrendingDownIcon = ({ className }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg>
+        );
+        const TrendingUpIcon = ({ className }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+        );
+        const InfoIcon = ({ className }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+        );
+        const ClockIcon = ({ className }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        );
+
+        // --- Utility Functions ---
+        const boxMullerRandom = () => {
+          let u = 0, v = 0;
+          while (u === 0) u = Math.random();
+          while (v === 0) v = Math.random();
+          return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+        };
+
+        const formatCurrency = (value) => {
+          if (value === undefined || value === null || isNaN(value)) return '$0';
+          return new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: 'USD',
+            maximumFractionDigits: 0,
+            notation: value > 1000000 ? 'compact' : 'standard'
+          }).format(value);
+        };
+
+        const formatPercent = (value) => `${(value || 0).toFixed(1)}%`;
+
+        // --- Main Application Component ---
+        function App() {
+          const [inputs, setInputs] = useState({
+            initialBalance: 1000000,
+            annualWithdrawal: 40000,
+            expectedReturn: 7.0,
+            volatility: 15.0,
+            years: 30,
+            inflation: 3.0,
+            numSimulations: 500, // Default is 500
+            withdrawalTiming: 'end'
+          });
+
+          const [results, setResults] = useState(null);
+          const [isSimulating, setIsSimulating] = useState(false);
+          const [showChart, setShowChart] = useState(false);
+
+          // Check if Recharts loaded
+          useEffect(() => {
+            console.log('Recharts available for chart?', typeof RechartsLib !== 'undefined' && RechartsLib !== window.Recharts);
+            setShowChart(typeof RechartsLib === 'object' && RechartsLib.LineChart !== undefined);
+          }, []);
+
+          // Run simulation automatically on page load
+          useEffect(() => {
+            setTimeout(() => {
+              runSimulation();
+            }, 100);
+          }, []);
+
+          const runSimulation = () => {
+            setIsSimulating(true);
+            
+            setTimeout(() => {
+              const { initialBalance, annualWithdrawal, expectedReturn, volatility, years, inflation, numSimulations, withdrawalTiming } = inputs;
+              
+              const mean = expectedReturn / 100;
+              const stdDev = volatility / 100;
+              const inflationRate = inflation / 100;
+
+              let failures = 0;
+              const allPaths = [];
+              const finalBalances = [];
+
+              // Run N scenarios (Using the full numSimulations)
+              const simCount = numSimulations; 
+              
+              for (let sim = 0; sim < simCount; sim++) {
+                let currentBalance = initialBalance;
+                let currentWithdrawal = annualWithdrawal; 
+                let path = [{ year: 0, balance: currentBalance }];
+                let failed = false;
+
+                for (let year = 1; year <= years; year++) {
+                  const randomShock = boxMullerRandom();
+                  const yearReturn = mean + (stdDev * randomShock);
+                  
+                  if (withdrawalTiming === 'start') {
+                    currentBalance -= currentWithdrawal;
+                    if (currentBalance < 0) currentBalance = 0;
+                    currentBalance = currentBalance * (1 + yearReturn);
+                  } else {
+                    currentBalance = currentBalance * (1 + yearReturn);
+                    currentBalance -= currentWithdrawal;
+                  }
+
+                  if (currentBalance <= 0) {
+                    currentBalance = 0;
+                    if (!failed) {
+                      failures++;
+                      failed = true;
+                    }
+                  }
+
+                  path.push({ year, balance: Math.round(currentBalance) });
+                  currentWithdrawal = currentWithdrawal * (1 + inflationRate);
+                }
+                allPaths.push(path);
+                finalBalances.push(currentBalance);
+              }
+
+              // Calculate Percentiles
+              const chartData = [];
+              for (let year = 0; year <= years; year++) {
+                const balancesAtYear = allPaths.map(p => p[year].balance).sort((a, b) => a - b);
+                
+                const dataPoint = {
+                  year,
+                  p10: balancesAtYear[Math.floor(simCount * 0.1)],
+                  median: balancesAtYear[Math.floor(simCount * 0.5)],
+                  p90: balancesAtYear[Math.floor(simCount * 0.9)],
+                };
+
+                // Add individual lines (Still limiting spaghetti lines to avoid UI clutter)
+                for(let i = 0; i < Math.min(10, simCount); i++) {
+                   if(allPaths[i] && allPaths[i][year]) {
+                       dataPoint[`sim${i}`] = allPaths[i][year].balance;
+                   }
+                }
+
+                chartData.push(dataPoint);
+              }
+
+              setResults({
+                failures,
+                totalSimulations: simCount,
+                successRate: ((simCount - failures) / simCount) * 100,
+                medianEndingBalance: finalBalances.sort((a, b) => a - b)[Math.floor(simCount * 0.5)],
+                chartData,
+                worstCase: chartData[chartData.length-1].p10,
+                bestCase: chartData[chartData.length-1].p90
+              });
+              
+              setIsSimulating(false);
+            }, 50);
+          };
+
+          const handleInputChange = (e) => {
+            const { name, value } = e.target;
+            setInputs(prev => ({
+              ...prev,
+              [name]: parseFloat(value) || 0
+            }));
+          };
+
+          const handleTimingChange = (e) => {
+            setInputs(prev => ({
+              ...prev,
+              withdrawalTiming: e.target.value
+            }));
+          };
+
+          return (
+            <div className="min-h-screen bg-slate-50 text-slate-900 font-sans p-4 md:p-8">
+              <div className="max-w-7xl mx-auto">
+                {/* Header */}
+                <div className="mb-8">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="p-3 bg-blue-600 rounded-lg shadow-lg">
+                      <CalculatorIcon className="w-8 h-8 text-white" />
+                    </div>
+                    <div>
+                      <h1 className="text-3xl font-bold text-slate-800">Sequencing Risk Calculator</h1>
+                      <p className="text-slate-500">Monte Carlo Simulation for Retirement Planning</p>
+                      {!showChart && (
+                        <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800">
+                          Note: Charts are disabled. Run via local server (http://localhost) for full features.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                  {/* Inputs Column */}
+                  <div className="lg:col-span-4 space-y-6">
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                      <h2 className="text-lg font-semibold mb-6 flex items-center gap-2">
+                        <RefreshCwIcon className="w-5 h-5 text-blue-600" />
+                        Parameters
+                      </h2>
+
+                      <div className="space-y-5">
+                        {/* Input fields (same as before) */}
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Starting Balance</label>
+                          <div className="relative">
+                            <span className="absolute left-3 top-2.5 text-slate-400">$</span>
+                            <input
+                              type="number"
+                              name="initialBalance"
+                              value={inputs.initialBalance}
+                              onChange={handleInputChange}
+                              className="w-full pl-8 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Annual Withdrawal</label>
+                          <div className="relative">
+                            <span className="absolute left-3 top-2.5 text-slate-400">$</span>
+                            <input
+                              type="number"
+                              name="annualWithdrawal"
+                              value={inputs.annualWithdrawal}
+                              onChange={handleInputChange}
+                              className="w-full pl-8 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                            />
+                          </div>
+                          <div className="mt-1 text-xs text-slate-500">
+                            Withdrawal Rate: {((inputs.annualWithdrawal / inputs.initialBalance) * 100).toFixed(2)}%
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Avg Return (%)</label>
+                            <input
+                              type="number"
+                              name="expectedReturn"
+                              value={inputs.expectedReturn}
+                              onChange={handleInputChange}
+                              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Volatility (%)</label>
+                            <input
+                              type="number"
+                              name="volatility"
+                              value={inputs.volatility}
+                              onChange={handleInputChange}
+                              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Duration (Years)</label>
+                            <input
+                              type="number"
+                              name="years"
+                              value={inputs.years}
+                              onChange={handleInputChange}
+                              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Inflation (%)</label>
+                            <input
+                              type="number"
+                              name="inflation"
+                              value={inputs.inflation}
+                              onChange={handleInputChange}
+                              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                            />
+                          </div>
+                        </div>
+
+                        {/* NEW: Withdrawal Timing Option */}
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Withdrawal Timing</label>
+                          <div className="relative">
+                            <ClockIcon className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                            <select
+                              name="withdrawalTiming"
+                              value={inputs.withdrawalTiming}
+                              onChange={handleTimingChange}
+                              className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white"
+                            >
+                              <option value="end">End of Year (Standard)</option>
+                              <option value="start">Start of Year (Conservative)</option>
+                            </select>
+                          </div>
+                          <div className="mt-1 text-xs text-slate-500">
+                            "Start of Year" reduces compound growth because money is removed before it can grow.
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={runSimulation}
+                          disabled={isSimulating}
+                          className={`w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow-sm transition-all flex justify-center items-center gap-2 ${isSimulating ? 'opacity-75 cursor-not-allowed' : ''}`}
+                        >
+                          {isSimulating ? 'Calculating...' : 'Run Simulation'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Results Column */}
+                  <div className="lg:col-span-8 space-y-6">
+                    {/* Top Level Stats */}
+                    {results && (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className={`p-6 rounded-xl border shadow-sm ${results.successRate > 85 ? 'bg-green-50 border-green-200' : results.successRate > 50 ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'}`}>
+                          <div className="text-sm font-medium text-slate-500 mb-1">Probability of Success</div>
+                          <div className={`text-3xl font-bold ${results.successRate > 85 ? 'text-green-700' : results.successRate > 50 ? 'text-amber-700' : 'text-red-700'}`}>
+                            {formatPercent(results.successRate)}
+                          </div>
+                          <div className="text-xs mt-2 text-slate-600">
+                            {results.failures} failures in {results.totalSimulations} scenarios
+                          </div>
+                        </div>
+
+                        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                          <div className="text-sm font-medium text-slate-500 mb-1">Median Ending Balance</div>
+                          <div className="text-3xl font-bold text-slate-800">
+                            {formatCurrency(results.medianEndingBalance)}
+                          </div>
+                        </div>
+
+                        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                          <div className="text-sm font-medium text-slate-500 mb-1">Worst Case (10th %)</div>
+                          <div className="text-3xl font-bold text-slate-800">
+                            {formatCurrency(results.worstCase)}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Chart or Table */}
+                    <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                      <h3 className="text-lg font-semibold mb-4 text-slate-800">
+                        Monte Carlo Results
+                      </h3>
+                      
+                      {results ? (
+                        showChart ? (
+                          <div style={{ width: '100%', height: 400 }}>
+                            <ResponsiveContainer>
+                              <ComposedChart data={results.chartData}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                                <XAxis dataKey="year" />
+                                <YAxis tickFormatter={(val) => `$${val/1000}k`} />
+                                <Tooltip formatter={(value) => formatCurrency(value)} />
+                                <Line type="monotone" dataKey="median" stroke="#0f172a" strokeWidth={3} dot={false} name="Median" />
+                                <Line type="monotone" dataKey="p90" stroke="#2563eb" strokeWidth={2} strokeDasharray="5 5" dot={false} name="90th Percentile" />
+                                <Line type="monotone" dataKey="p10" stroke="#ef4444" strokeWidth={2} strokeDasharray="5 5" dot={false} name="10th Percentile" />
+                              </ComposedChart>
+                            </ResponsiveContainer>
+                          </div>
+                        ) : (
+                          <div className="p-4 bg-slate-50 rounded-lg">
+                            <h4 className="font-medium mb-3">Results Table (Chart disabled)</h4>
+                            <div className="overflow-x-auto">
+                              <table className="min-w-full text-sm">
+                                <thead>
+                                  <tr className="border-b">
+                                    <th className="text-left py-2">Year</th>
+                                    <th className="text-left py-2">10th %</th>
+                                    <th className="text-left py-2">Median</th>
+                                    <th className="text-left py-2">90th %</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {results.chartData.filter((_, i) => i % 5 === 0).map((data, i) => (
+                                    <tr key={i} className="border-b border-slate-100">
+                                      <td className="py-2">{data.year}</td>
+                                      <td className="py-2">{formatCurrency(data.p10)}</td>
+                                      <td className="py-2">{formatCurrency(data.median)}</td>
+                                      <td className="py-2">{formatCurrency(data.p90)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                            <p className="mt-3 text-sm text-slate-600">
+                              Tip: Run via <code>http://localhost:8000</code> to enable interactive charts.
+                            </p>
+                          </div>
+                        )
+                      ) : (
+                        <div className="h-64 flex items-center justify-center text-slate-400">
+                          {isSimulating ? 'Running simulation...' : 'Click "Run Simulation" to start'}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        // Render the app
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
