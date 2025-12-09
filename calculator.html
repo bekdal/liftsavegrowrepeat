@@ -42,6 +42,14 @@
         th, td { text-align: right; padding: 10px; border-bottom: 1px solid #eee; }
         th { background-color: #f8f9fa; position: sticky; top: 0; text-align: right; }
         
+        /* Table Footer Styling for Totals */
+        tfoot th { 
+            background-color: #ecf0f1; 
+            border-top: 3px solid #bdc3c7; 
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
         /* Email Button */
         .suggestion-box { text-align: center; margin-top: 50px; padding: 20px; border-top: 1px solid #eee; }
         .btn-email { background-color: #95a5a6; color: white; text-decoration: none; padding: 10px 20px; border-radius: 20px; transition: 0.3s; display: inline-block; }
@@ -82,7 +90,7 @@
                 <table id="m_table">
                     <thead><tr><th>Year</th><th>Open</th><th>Payment</th><th>Interest</th><th>Close</th></tr></thead>
                     <tbody></tbody>
-                </table>
+                    <tfoot></tfoot> </table>
             </div>
         </div>
 
@@ -135,7 +143,7 @@
                 <table id="i_table">
                     <thead><tr><th>Year</th><th>Open</th><th>Contrib</th><th>Return</th><th>Tax</th><th>Close</th></tr></thead>
                     <tbody></tbody>
-                </table>
+                    <tfoot></tfoot> </table>
             </div>
         </div>
     </div>
@@ -206,8 +214,9 @@
         let chartLabels = [];
         let dataBalance = [], dataPrincipal = [], dataInterest = [];
         let yearlyData = [];
-        let curYear = { interest: 0, payment: 0 };
+        let curYear = { interest: 0, payment: 0, principal: 0 };
         let periods = 0, years = 0;
+        let totalInterestPaid = 0; // Total accumulation variable
 
         while (balance > 0 && periods < 1200) {
             periods++;
@@ -216,8 +225,10 @@
             if (balance < principal) principal = balance;
             
             balance -= principal;
+            totalInterestPaid += interest; // Accumulate total interest
             curYear.interest += interest;
             curYear.payment += (principal + interest);
+            curYear.principal += principal; // Total principal paid in this year
 
             if (periods % freq === 0 || balance <= 0) {
                 years++;
@@ -226,19 +237,35 @@
                 dataInterest.push(curYear.interest);
                 dataPrincipal.push(curYear.payment);
                 
-                yearlyData.push({ y: years, o: balance + principal, p: curYear.payment, i: curYear.interest, c: balance });
-                curYear = { interest: 0, payment: 0 };
+                yearlyData.push({ y: years, o: (balance + curYear.principal), p: curYear.payment, i: curYear.interest, c: balance });
+                curYear = { interest: 0, payment: 0, principal: 0 };
             }
         }
+        
+        // Final balance for display purposes (should be 0 or near 0)
+        if (balance < 0) balance = 0;
 
         document.getElementById('m_result').style.display = 'block';
         document.getElementById('m_result').innerText = `Repayment Time: ${(periods / freq).toFixed(1)} Years`;
 
         const tbody = document.querySelector('#m_table tbody');
+        const tfoot = document.querySelector('#m_table tfoot');
         tbody.innerHTML = '';
+        
+        // Populate Body
         yearlyData.forEach(r => {
             tbody.innerHTML += `<tr><td>${r.y}</td><td>${formatCurrency(r.o)}</td><td>${formatCurrency(r.p)}</td><td>${formatCurrency(r.i)}</td><td>${formatCurrency(r.c)}</td></tr>`;
         });
+        
+        // Populate Footer (Totals)
+        const totalPayments = yearlyData.reduce((acc, row) => acc + row.p, 0);
+        tfoot.innerHTML = `<tr>
+            <th>TOTALS</th>
+            <th></th>
+            <th>${formatCurrency(totalPayments)}</th>
+            <th>${formatCurrency(totalInterestPaid)}</th>
+            <th>${formatCurrency(balance)}</th>
+        </tr>`;
 
         renderChart('mortgageChart', mChart, chartLabels, 
             [{ label: 'Balance', data: dataBalance, borderColor: '#e74c3c' },
@@ -258,9 +285,13 @@
         const taxRate = parseFloat(document.getElementById('i_tax').value) / 100;
 
         let chartLabels = [], dataBalance = [], dataContrib = [], dataReturn = [];
+        let overallTotalReturn = 0;
+        let overallTotalTax = 0;
+        let overallTotalContrib = 0;
+        
         const tbody = document.querySelector('#i_table tbody');
+        const tfoot = document.querySelector('#i_table tfoot');
         tbody.innerHTML = '';
-        let totalContrib = 0;
 
         for (let y = 1; y <= years; y++) {
             let startBal = balance;
@@ -275,17 +306,34 @@
                 yearGrowth += periodGrowth;
             }
             
-            let yearYield = balance * yieldRate;
-            let tax = yearYield * taxRate;
-            if (reinvest) balance += yearYield; // Reinvest full yield? Or post tax? usually full dividend reinvested, tax paid from pocket.
+            let yearYield = balance * yieldRate; 
+            let taxExpense = yearYield * taxRate;
+            let totalReturn = yearGrowth + yearYield;
+
+            if (reinvest) balance += yearYield; 
+
+            overallTotalReturn += totalReturn;
+            overallTotalTax += taxExpense;
+            overallTotalContrib += yearContrib;
             
             chartLabels.push(`Year ${y}`);
             dataBalance.push(balance);
             dataContrib.push(yearContrib);
-            dataReturn.push(yearGrowth + yearYield);
+            dataReturn.push(totalReturn);
 
-            tbody.innerHTML += `<tr><td>${y}</td><td>${formatCurrency(startBal)}</td><td>${formatCurrency(yearContrib)}</td><td>${formatCurrency(yearGrowth+yearYield)}</td><td>${formatCurrency(tax)}</td><td>${formatCurrency(balance)}</td></tr>`;
+            tbody.innerHTML += `<tr><td>${y}</td><td>${formatCurrency(startBal)}</td><td>${formatCurrency(yearContrib)}</td><td>${formatCurrency(totalReturn)}</td><td>${formatCurrency(taxExpense)}</td><td>${formatCurrency(balance)}</td></tr>`;
         }
+        
+        // Populate Footer (Totals)
+        tfoot.innerHTML = `<tr>
+            <th>TOTALS</th>
+            <th>${formatCurrency(parseFloat(document.getElementById('i_balance').value))}</th>
+            <th>${formatCurrency(overallTotalContrib)}</th>
+            <th>${formatCurrency(overallTotalReturn)}</th>
+            <th>${formatCurrency(overallTotalTax)}</th>
+            <th>${formatCurrency(balance)}</th>
+        </tr>`;
+
 
         document.getElementById('i_result').style.display = 'block';
         document.getElementById('i_result').innerText = `Final Balance: ${formatCurrency(balance)}`;
@@ -302,18 +350,27 @@
         const years = parseInt(document.getElementById('c_years').value);
         
         // 1. MORTGAGE SAVING CALC
-        // Run two sims: one with normal payment, one with payment + extra
         const mBalance = parseFloat(document.getElementById('m_balance').value);
         const mRate = parseFloat(document.getElementById('m_rate').value) / 100;
-        const mFreq = 12; // Force monthly for comparison simplicity
         
-        const interestPaidStandard = getInterestOverTime(mBalance, mRate, 0, years);
-        const interestPaidWithExtra = getInterestOverTime(mBalance, mRate, extra, years);
+        // The comparison needs a baseline repayment to work against. We assume the user's current payment is the baseline.
+        const basePayment = parseFloat(document.getElementById('m_payment').value);
+        const mFreq = parseInt(document.getElementById('m_freq').value);
+
+        // Normalize base payment to monthly for 12 periods/year
+        let baseMonthlyPayment;
+        if (mFreq === 26) {
+             baseMonthlyPayment = basePayment * (26 / 12); // Convert fortnightly payments to rough monthly equivalent for simplicity
+        } else {
+             baseMonthlyPayment = basePayment;
+        }
+
+        const interestPaidStandard = getInterestOverTime(mBalance, mRate, baseMonthlyPayment, 0, years);
+        const interestPaidWithExtra = getInterestOverTime(mBalance, mRate, baseMonthlyPayment, extra, years);
         
         const interestSaved = interestPaidStandard - interestPaidWithExtra;
 
         // 2. INVESTMENT GAIN CALC
-        // Sim: Start $0, contribute 'extra' monthly
         const iGrowth = parseFloat(document.getElementById('i_growth').value) / 100;
         const iYield = parseFloat(document.getElementById('i_yield').value) / 100;
         const iTax = parseFloat(document.getElementById('i_tax').value) / 100;
@@ -329,14 +386,10 @@
                 invBalance += invBalance * (iGrowth/12);
             }
             let yrYield = invBalance * iYield;
-            let yrTax = yrYield * iTax; // Tax acts as a cost
+            let yrTax = yrYield * iTax; 
+            
             if(iReinvest) invBalance += yrYield;
-            // Note: We don't subtract tax from balance, we treat it as a "expense" reducing net gain
-            // But to simplify "Profit", we calculate: Final Balance + (Reinvested Divs) - Cost Basis - Taxes Paid
-             // SIMPLIFIED PROFIT = (Final Balance - Total Contrib) - (Total Tax Paid)
-             // *Adjusting logic: yield tax is a cash drag.*
-             // Let's assume tax is paid from external cash, so it reduces the "net benefit".
-             invBalance -= yrTax; 
+            invBalance -= yrTax; // Tax acts as a cash drag/cost
         }
         
         const investmentProfit = invBalance - totalInvested;
@@ -358,23 +411,15 @@
         }
     }
 
-    function getInterestOverTime(bal, rate, extraPayment, years) {
-        // Simple internal loop to sum interest
-        // Base payment assumed from main calculator or strictly interest only? 
-        // We use the USER'S main payment input
-        let payment = parseFloat(document.getElementById('m_payment').value);
-        // Normalize payment to monthly if user selected fortnightly
-        const userFreq = parseInt(document.getElementById('m_freq').value);
-        if(userFreq === 26) payment = payment * 2.16; // approx monthly conversion
-        
-        payment += extraPayment;
-
+    function getInterestOverTime(bal, rate, basePayment, extraPayment, years) {
         let totalInterest = 0;
+        const monthlyPayment = basePayment + extraPayment;
+
         for(let i=0; i < years * 12; i++) {
             if(bal <= 0) break;
             let interest = (bal * rate) / 12;
             totalInterest += interest;
-            let principal = payment - interest;
+            let principal = monthlyPayment - interest;
             if (bal < principal) principal = bal;
             bal -= principal;
         }
