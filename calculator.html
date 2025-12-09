@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mortgage vs Investment Calculator</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f4f7f6; padding: 20px; color: #333; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { text-align: center; color: #2c3e50; }
+        h2 { border-bottom: 2px solid #ddd; padding-bottom: 10px; margin-top: 0; }
+        
+        /* Layout */
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-bottom: 40px; }
+        @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+        
+        .card { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        
+        /* Inputs */
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: 600; font-size: 0.9em; }
+        input, select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        .btn-calc { background-color: #3498db; color: white; border: none; padding: 12px; width: 100%; border-radius: 4px; cursor: pointer; font-size: 1em; margin-top: 10px; }
+        .btn-calc:hover { background-color: #2980b9; }
+
+        /* Outputs */
+        .result-box { margin-top: 20px; padding: 15px; background: #e8f6f3; border-radius: 4px; text-align: center; font-size: 1.2em; font-weight: bold; color: #16a085; }
+        
+        /* Tables */
+        .table-container { margin-top: 20px; overflow-x: auto; max-height: 300px; overflow-y: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
+        th, td { text-align: right; padding: 8px; border-bottom: 1px solid #eee; }
+        th { background-color: #f8f9fa; position: sticky; top: 0; }
+        
+        /* Email Button */
+        .suggestion-box { text-align: center; margin-top: 50px; padding: 20px; }
+        .btn-email { background-color: #95a5a6; color: white; text-decoration: none; padding: 10px 20px; border-radius: 20px; transition: 0.3s; }
+        .btn-email:hover { background-color: #7f8c8d; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Financial Comparison Tool</h1>
+
+    <div class="grid">
+        <div class="card">
+            <h2>🏠 Mortgage Calculator</h2>
+            <div class="form-group">
+                <label>Current Balance ($)</label>
+                <input type="number" id="m_balance" value="500000">
+            </div>
+            <div class="form-group">
+                <label>Interest Rate (%)</label>
+                <input type="number" id="m_rate" value="6.0" step="0.01">
+            </div>
+            <div class="form-group">
+                <label>Repayment Frequency</label>
+                <select id="m_freq">
+                    <option value="12">Monthly</option>
+                    <option value="26">Fortnightly</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Total Repayment Amount (per period)</label>
+                <input type="number" id="m_payment" value="3500">
+                <small style="color: #777;">Must be higher than interest-only amount.</small>
+            </div>
+            <button class="btn-calc" onclick="calculateMortgage()">Calculate Mortgage</button>
+            
+            <div id="m_result" class="result-box" style="display:none;"></div>
+            
+            <canvas id="mortgageChart" style="margin-top:20px;"></canvas>
+            
+            <div class="table-container">
+                <table id="m_table">
+                    <thead>
+                        <tr>
+                            <th>Year</th>
+                            <th>Open Bal</th>
+                            <th>Payment</th>
+                            <th>Interest</th>
+                            <th>Close Bal</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📈 Share Investment</h2>
+            <div class="form-group">
+                <label>Initial Investment Balance ($)</label>
+                <input type="number" id="i_balance" value="10000">
+            </div>
+            <div class="form-group">
+                <label>Contribution Amount ($)</label>
+                <input type="number" id="i_contribution" value="1000">
+            </div>
+            <div class="form-group">
+                <label>Contribution Frequency</label>
+                <select id="i_freq">
+                    <option value="12">Monthly</option>
+                    <option value="26">Fortnightly</option>
+                    <option value="1">Annually</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Holding Period (Years)</label>
+                <input type="number" id="i_years" value="10">
+            </div>
+            <div class="grid" style="margin-bottom:0; gap:10px;">
+                <div class="form-group">
+                    <label>Growth %</label>
+                    <input type="number" id="i_growth" value="5" step="0.1">
+                </div>
+                <div class="form-group">
+                    <label>Yield %</label>
+                    <input type="number" id="i_yield" value="3" step="0.1">
+                </div>
+            </div>
+            <div class="grid" style="margin-bottom:0; gap:10px;">
+                <div class="form-group">
+                    <label>Reinvest Dividends?</label>
+                    <select id="i_reinvest">
+                        <option value="yes">Yes</option>
+                        <option value="no">No</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Tax Bracket (%)</label>
+                    <input type="number" id="i_tax" value="30" step="0.1">
+                </div>
+            </div>
+            <button class="btn-calc" onclick="calculateInvestment()">Calculate Shares</button>
+            
+            <div id="i_result" class="result-box" style="display:none;"></div>
+            
+            <canvas id="investmentChart" style="margin-top:20px;"></canvas>
+
+            <div class="table-container">
+                <table id="i_table">
+                    <thead>
+                        <tr>
+                            <th>Year</th>
+                            <th>Open Bal</th>
+                            <th>Contrib</th>
+                            <th>Return</th>
+                            <th>Tax</th>
+                            <th>Close Bal</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="suggestion-box">
+        <a href="mailto:ben.rekdale@gmail.com?subject=Calculator%20Suggestion" class="btn-email">✉️ Leave a Suggestion</a>
+    </div>
+
+</div>
+
+<script>
+    // --- UTILITY FORMATTING ---
+    const formatCurrency = (num) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(num);
+
+    // --- CHART INSTANCES ---
+    let mChart = null;
+    let iChart = null;
+
+    // --- MORTGAGE CALCULATOR ---
+    function calculateMortgage() {
+        const balanceStart = parseFloat(document.getElementById('m_balance').value);
+        const rate = parseFloat(document.getElementById('m_rate').value) / 100;
+        const freq = parseInt(document.getElementById('m_freq').value);
+        const payment = parseFloat(document.getElementById('m_payment').value);
+        
+        // Validation: Minimum Interest
+        const minInterest = (balanceStart * rate) / freq;
+        if (payment <= minInterest) {
+            alert(`Your payment is too low! It must be higher than the interest charge of ${formatCurrency(minInterest)} per period.`);
+            return;
+        }
+
+        let balance = balanceStart;
+        let totalInterest = 0;
+        let periods = 0;
+        let years = 0;
+        
+        // Data for Charts/Tables
+        let chartLabels = [];
+        let dataBalance = [];
+        let dataPrincipalPaid = []; // Using this as 'Contribution' equivalent
+        let dataInterest = [];
+        
+        let yearlyData = [];
+        let currentYear = { open: balance, interest: 0, payment: 0 };
+
+        // Iteration Limit (prevent infinite loop)
+        const MAX_PERIODS = 1200; // 100 years monthly
+
+        while (balance > 0 && periods < MAX_PERIODS) {
+            periods++;
+            const interestCharge = (balance * rate) / freq;
+            let principalComponent = payment - interestCharge;
+            
+            // Handle final payment
+            if (balance < principalComponent) {
+                principalComponent = balance;
+            }
+
+            balance -= principalComponent;
+            totalInterest += interestCharge;
+            
+            // Accumulate Yearly Data
+            currentYear.interest += interestCharge;
+            currentYear.payment += (principalComponent + interestCharge);
+
+            // If end of year or payoff
+            if (periods % freq === 0 || balance <= 0) {
+                years++;
+                chartLabels.push(`Year ${years}`);
+                dataBalance.push(balance);
+                dataInterest.push(currentYear.interest); // Annual interest
+                dataPrincipalPaid.push(currentYear.payment); // Annual total payment
+
+                yearlyData.push({
+                    year: years,
+                    open: currentYear.open,
+                    payment: currentYear.payment,
+                    interest: currentYear.interest,
+                    close: balance
+                });
+                
+                // Reset for next year
+                currentYear = { open: balance, interest: 0, payment: 0 };
+            }
+        }
+
+        const totalYears = (periods / freq).toFixed(1);
+        
+        // Update Output Text
+        const resBox = document.getElementById('m_result');
+        resBox.style.display = 'block';
+        resBox.innerText = `Time to Repay: ${totalYears} Years`;
+
+        // Update Table
+        const tbody = document.querySelector('#m_table tbody');
+        tbody.innerHTML = '';
+        yearlyData.forEach(row => {
+            tbody.innerHTML += `<tr>
+                <td>${row.year}</td>
+                <td>${formatCurrency(row.open)}</td>
+                <td>${formatCurrency(row.payment)}</td>
+                <td>${formatCurrency(row.interest)}</td>
+                <td>${formatCurrency(row.close)}</td>
+            </tr>`;
+        });
+
+        // Update Chart
+        renderChart('mortgageChart', mChart, chartLabels, 
+            [{ label: 'Balance', data: dataBalance, borderColor: '#e74c3c' },
+             { label: 'Annual Payment', data: dataPrincipalPaid, borderColor: '#3498db', borderDash: [5, 5] },
+             { label: 'Annual Interest Cost', data: dataInterest, borderColor: '#f1c40f' }]
+        , (c) => mChart = c);
+    }
+
+    // --- INVESTMENT CALCULATOR ---
+    function calculateInvestment() {
+        let balance = parseFloat(document.getElementById('i_balance').value);
+        const contribution = parseFloat(document.getElementById('i_contribution').value);
+        const freq = parseInt(document.getElementById('i_freq').value);
+        const years = parseInt(document.getElementById('i_years').value);
+        const growthRate = parseFloat(document.getElementById('i_growth').value) / 100;
+        const yieldRate = parseFloat(document.getElementById('i_yield').value) / 100;
+        const reinvest = document.getElementById('i_reinvest').value === 'yes';
+        const taxRate = parseFloat(document.getElementById('i_tax').value) / 100;
+
+        let chartLabels = [];
+        let dataBalance = [];
+        let dataContrib = [];
+        let dataReturn = [];
+        
+        const tbody = document.querySelector('#i_table tbody');
+        tbody.innerHTML = '';
+
+        let totalContrib = 0;
+
+        for (let y = 1; y <= years; y++) {
+            let yearStartBal = balance;
+            let yearContrib = 0;
+            let yearYield = 0;
+            let yearGrowth = 0;
+            
+            // Iterate periods within the year
+            for (let p = 0; p < freq; p++) {
+                // Add contribution
+                balance += contribution;
+                yearContrib += contribution;
+                
+                // Simple approximation: Growth/Yield applied continuously or end of year? 
+                // Standard for simple calcs is often monthly compounding, 
+                // but for shares, yield is usually quarterly/annually. 
+                // We will approximate strictly by period for smoother math.
+                
+                // Growth
+                let periodGrowth = balance * (growthRate / freq);
+                balance += periodGrowth;
+                yearGrowth += periodGrowth;
+            }
+
+            // Calculate Yield (based on average balance or end balance? Using end balance of year for simplicity)
+            // Note: If reinvesting, yield adds to balance. If not, it's income (cash flow) but doesn't grow portfolio.
+            yearYield = balance * yieldRate; 
+            let taxExpense = yearYield * taxRate;
+            let netYield = yearYield; // If not reinvesting, we don't add to balance
+
+            if (reinvest) {
+                // If reinvesting, we usually reinvest the post-tax amount or pre-tax? 
+                // Usually you reinvest the dividend, then pay tax from other cash. 
+                // But strictly, the portfolio grows by the yield.
+                balance += yearYield; 
+            }
+
+            let totalReturn = yearGrowth + yearYield;
+
+            // Chart Data
+            chartLabels.push(`Year ${y}`);
+            dataBalance.push(balance);
+            dataContrib.push(yearContrib);
+            dataReturn.push(totalReturn);
+
+            // Table Row
+            tbody.innerHTML += `<tr>
+                <td>${y}</td>
+                <td>${formatCurrency(yearStartBal)}</td>
+                <td>${formatCurrency(yearContrib)}</td>
+                <td>${formatCurrency(totalReturn)}</td>
+                <td>${formatCurrency(taxExpense)}</td>
+                <td>${formatCurrency(balance)}</td>
+            </tr>`;
+        }
+        
+        // Update Output Text
+        const resBox = document.getElementById('i_result');
+        resBox.style.display = 'block';
+        resBox.innerText = `Final Balance: ${formatCurrency(balance)}`;
+
+        // Update Chart
+        renderChart('investmentChart', iChart, chartLabels, 
+            [{ label: 'Portfolio Balance', data: dataBalance, borderColor: '#2ecc71' },
+             { label: 'Annual Contribution', data: dataContrib, borderColor: '#3498db', borderDash: [5, 5] },
+             { label: 'Annual Return (Growth+Yield)', data: dataReturn, borderColor: '#f1c40f' }]
+        , (c) => iChart = c);
+    }
+
+    // --- CHART RENDER HELPER ---
+    function renderChart(canvasId, chartInstance, labels, datasets, setChartInstance) {
+        if (chartInstance) chartInstance.destroy();
+        
+        const ctx = document.getElementById(canvasId).getContext('2d');
+        const newChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: datasets.map(ds => ({
+                    label: ds.label,
+                    data: ds.data,
+                    borderColor: ds.borderColor,
+                    backgroundColor: ds.borderColor,
+                    borderWidth: 2,
+                    tension: 0.1,
+                    fill: false,
+                    pointRadius: 2
+                }))
+            },
+            options: {
+                responsive: true,
+                interaction: { mode: 'index', intersect: false },
+                scales: { y: { beginAtZero: true } }
+            }
+        });
+        setChartInstance(newChart);
+    }
+    
+    // Initial Calc on Load
+    window.onload = function() {
+        calculateMortgage();
+        calculateInvestment();
+    }
+</script>
+
+</body>
+</html>
